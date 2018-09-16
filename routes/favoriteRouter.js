@@ -37,7 +37,7 @@ favoriteRouter.route('/')
             }, (err) => next(err)) 
         }
         else {
-            Favorites.create(new Favorites({'user': req.user._id, 'dishes': req.body}))
+            Favorites.create({'user': req.user._id, 'dishes': req.body})
             .then((favorite) => {
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
@@ -68,8 +68,28 @@ favoriteRouter.route('/:dishId')
     next();
 })
 .get(cors.cors, (req,res,next) => {
-    res.statusCode = 403;
-    res.end('GET operation not supported on /favorites/'+ req.params.dishId);
+    Favorites.findOne({user: req.user._id})
+    .then((favorites) => {
+        if (!favorites) {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            return res.json({"exists": false, "favorites": favorites});
+        }
+        else {
+            if (favorites.dishes.indexOf(req.params.dishId) < 0) {
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                return res.json({"exists": false, "favorites": favorites});
+            }
+            else {
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                return res.json({"exists": true, "favorites": favorites});
+            }
+        }
+
+    }, (err) => next(err))
+    .catch((err) => next(err))
 })
 .post((req, res, next) => {
     Favorites.findOne({'user': req.user._id})
@@ -91,7 +111,7 @@ favoriteRouter.route('/:dishId')
             }
         }
         else {
-            Favorites.create(new Favorites({'user': req.user._id, 'dishes': [req.params.dishId]}))
+            Favorites.create({'user': req.user._id, 'dishes': [req.params.dishId]})
             .then((favorite) => {
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
@@ -109,20 +129,27 @@ favoriteRouter.route('/:dishId')
 .delete((req, res, next) => {
     Favorites.findOne({'user': req.user._id})
     .then((favorite) => {
-        if (favorite && favorite.dishes.some(el => el.equals(req.params.dishId))) {
-            Favorites.updateOne({'user': req.user._id},
-            {$set: {'dishes': favorite.dishes.filter(el => !el.equals(req.params.dishId))}})
-            .then((favorite) => {
-                res.statusCode = 200;
-                res.setHeader('Content-Type','application/json');
-                res.json(favorite);
-            }, (err) => next(err)) 
-        }
-        else {
-            err = new Error('Dish ' + req.params.dishId + ' not found in favorites');
-            err.status = 404;
-            return next(err);
-        }
+        var index = favorite.dishes.indexOf(req.params.dishId);
+		if(index >= 0){
+			favorite.dishes.splice(index, 1);
+			favorite.save()
+			.then((favorite) => {
+				Favorites.findById(favorite._id)
+				.populate('user')
+				.populate('dishes')
+				.then((favorite) => {
+                    console.log('Favorite Dish Deleted!', favorite);
+                    res.statusCode = 200;
+			        res.setHeader('Content-Type', 'application/json');
+                    res.json(favorite);
+				});	
+			}, (err) => next(err));
+		}
+		else {
+            res.statusCode = 404;
+			res.setHeader('Content-Type', 'application/json');
+            res.end('Dish ' + req.params.dishId + ' not found in favorites');
+		}
     }, (err) => next(err))
     .catch((err) => next(err));
 });
